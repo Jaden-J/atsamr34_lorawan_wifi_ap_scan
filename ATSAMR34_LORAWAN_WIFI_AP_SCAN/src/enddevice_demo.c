@@ -426,7 +426,7 @@ static void processJoinAndSend(void)
 #ifdef WIFI_POWER_DOWN_ENABLE
 		printf("\n> Powering Up WINC1500\r\n") ;
 		wifi_init() ;
-#endif		
+#endif
 		// Configure Scan Parameters
 		tstrM2MScanOption strScanOptions ;
 		strScanOptions.u8NumOfSlot = 1 ; //M2M_SCAN_DEFAULT_NUM_SLOTS;
