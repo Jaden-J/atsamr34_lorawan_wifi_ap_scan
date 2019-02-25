@@ -91,11 +91,10 @@
 /************************** GLOBAL VARIABLES ***********************************/
 // WiFi
 static uint8_t u8ScanResultIdx = 0 ;	// Index of scan list to request scan result
-static uint8_t u8buffer[20] ;			// contains 2 entries max. Byte0: number of AP found [0-1-2], Byte 1: RSSI AP1, Byte2-7: MAC Address AP1, Byte8: RSSI AP2, Byte9-14: MAC Address AP2
+static uint8_t u8buffer[BUFFER_LEN] ;	// can store up to 7 entries. 1 entry = RSSI [1Byte], BSSID [6Bytes]
+static uint8_t u8bufferLen = 0 ;		// buffer length
 static uint8_t u8bufferIdx = 0 ;		// buffer index
-static uint8_t u8bufferEntry = 0 ;		// buffer entry, 1 entry contains: RSSI and MAC Address
-static sint8 s8rssi_0 = 0 ;
-static sint8 s8rssi_1 = 0 ;
+static uint8_t u8bufferEntry = 0 ;		// buffer entry, 1 entry contains: RSSI and BSSID
 
 static bool joined = false;
 //static float cel_val;
@@ -670,23 +669,15 @@ static void wifi_event_cb(uint8_t u8MsgType, void *pvMsg)
 			tstrM2mScanDone *pstrInfo = (tstrM2mScanDone *)pvMsg ;
 			if(pstrInfo->s8ScanState == M2M_SUCCESS)
 			{
+				// reset counters
 				memset(u8buffer, 0, sizeof(u8buffer)) ;
+				u8bufferLen = 0 ;
 				u8bufferIdx = 0 ;
 				u8bufferEntry = 0 ;
 				u8ScanResultIdx = 0 ;
 				if (pstrInfo->u8NumofCh >= 1)
 				{
 					printf("Number of AP found %d\r\n", pstrInfo->u8NumofCh) ;
-					if (pstrInfo->u8NumofCh > 1)
-					{
-						// will store 2 BSSIDs in the buffer
-						u8buffer[u8bufferIdx++] = 2 ;
-					}
-					else
-					{
-						// will store 1 BSSID in the buffer
-						u8buffer[u8bufferIdx++] = pstrInfo->u8NumofCh ;
-					}
 					m2m_wifi_req_scan_result(u8ScanResultIdx) ;
 					u8ScanResultIdx ++ ;
 				}
@@ -696,8 +687,8 @@ static void wifi_event_cb(uint8_t u8MsgType, void *pvMsg)
 #ifdef WIFI_POWER_DOWN_ENABLE
 					power_down_wifi() ;
 #endif
-					// store 0 AP found
 					u8buffer[u8bufferIdx++] = pstrInfo->u8NumofCh ;
+					u8bufferLen = u8bufferIdx ;
 					// transmit 1Byte
 					sendData() ;
 				}
@@ -721,87 +712,49 @@ static void wifi_event_cb(uint8_t u8MsgType, void *pvMsg)
 			pstrScanResult->au8BSSID[3], pstrScanResult->au8BSSID[4], pstrScanResult->au8BSSID[5],
 			pstrScanResult->au8SSID) ;
 
-			u8bufferEntry++ ;
-			if (u8bufferEntry <= 2)
+			if (u8bufferEntry < ENTRY_NUMBER)
 			{
-				// store the 2 first entries in the buffer - 1 entry = RSSI[1-Byte], BSSID[6-Bytes]
-				u8buffer[u8bufferIdx++] = pstrScanResult->s8rssi ;
+				u8bufferEntry++ ;
+				// store n ENTRY_NUMBER in the buffer, 1 entry = RSSI[1-Byte], BSSID[6-Bytes]
+				u8buffer[u8bufferIdx++] = pstrScanResult->s8rssi ;	// signed to unsigned (eg. -53dBm -> 0xCB => (0xFF-0xCB+1)
 				u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[0] ;
 				u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[1] ;
 				u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[2] ;
 				u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[3] ;
 				u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[4] ;
 				u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[5] ;
-				// store the RSSI values for the comparison
-				if (u8bufferEntry == 1)	s8rssi_0 = pstrScanResult->s8rssi ;
-				if (u8bufferEntry == 2) s8rssi_1 = pstrScanResult->s8rssi ;
+				u8bufferLen = u8bufferIdx ;
 			}
 			else
 			{
-				// check if this new entry has stronger WiFi signal than the two entries previously stored
-				sint8 s8new_rssi = pstrScanResult->s8rssi ;
-				sint8 diff_0 ;
-				sint8 diff_1 ;
-				if ((s8new_rssi > s8rssi_0) && (s8new_rssi > s8rssi_1))
+				// new entry is coming
+				uint8_t u8new_rssi = pstrScanResult->s8rssi ;
+				// search for the lowest RSSI value in the current buffer
+				u8bufferIdx = 0 ;
+				uint8_t u8min_rssi_pos = 0 ;
+				uint8_t u8min_rssi_val = u8buffer[u8bufferIdx] ;
+				for (uint8_t i = 1; i < ENTRY_NUMBER; i++)
 				{
-					// new entry has better signal than the two previous entries
-					// determine the entry which has the worse signal
-					diff_0 = (s8rssi_0 - s8new_rssi) ;
-					diff_1 = (s8rssi_1 - s8new_rssi) ;
-					if (diff_0 < diff_1)
+					u8bufferIdx += 7 ;
+					if (u8buffer[u8bufferIdx] < u8min_rssi_val)
 					{
-						// new entry will replace entry 0 starting at index 1
-						u8buffer[1] = pstrScanResult->s8rssi ;
-						u8buffer[2] = pstrScanResult->au8BSSID[0] ;
-						u8buffer[3] = pstrScanResult->au8BSSID[1] ;
-						u8buffer[4] = pstrScanResult->au8BSSID[2] ;
-						u8buffer[5] = pstrScanResult->au8BSSID[3] ;
-						u8buffer[6] = pstrScanResult->au8BSSID[4] ;
-						u8buffer[7] = pstrScanResult->au8BSSID[5] ;
-						// store the new RSSI for next comparison
-						s8rssi_0 = pstrScanResult->s8rssi ;
-					}
-					else
-					{
-						// new entry will replace entry 1 starting at index 8
-						u8buffer[8] = pstrScanResult->s8rssi ;
-						u8buffer[9] = pstrScanResult->au8BSSID[0] ;
-						u8buffer[10] = pstrScanResult->au8BSSID[1] ;
-						u8buffer[11] = pstrScanResult->au8BSSID[2] ;
-						u8buffer[12] = pstrScanResult->au8BSSID[3] ;
-						u8buffer[13] = pstrScanResult->au8BSSID[4] ;
-						u8buffer[14] = pstrScanResult->au8BSSID[5] ;
-						// store the new RSSI for next comparison
-						s8rssi_1 = pstrScanResult->s8rssi ;
+						u8min_rssi_val = u8buffer[u8bufferIdx] ;
+						u8min_rssi_pos = u8bufferIdx ;
 					}
 				}
-				else if ((s8new_rssi > s8rssi_0) && (s8new_rssi < s8rssi_1))
+				if (u8new_rssi > u8min_rssi_val)
 				{
-					// new entry will replace entry 0
-					u8buffer[1] = pstrScanResult->s8rssi ;
-					u8buffer[2] = pstrScanResult->au8BSSID[0] ;
-					u8buffer[3] = pstrScanResult->au8BSSID[1] ;
-					u8buffer[4] = pstrScanResult->au8BSSID[2] ;
-					u8buffer[5] = pstrScanResult->au8BSSID[3] ;
-					u8buffer[6] = pstrScanResult->au8BSSID[4] ;
-					u8buffer[7] = pstrScanResult->au8BSSID[5] ;
-					// store the new RSSI for next comparison
-					s8rssi_0 = pstrScanResult->s8rssi ;
+					// new entry will replace the entry with worst signal
+					u8bufferIdx = u8min_rssi_pos ;
+					u8buffer[u8bufferIdx++] = pstrScanResult->s8rssi ;	// signed to unsigned (eg. -53dBm -> 0xCB => (0xFF-0xCB+1)
+					u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[0] ;
+					u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[1] ;
+					u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[2] ;
+					u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[3] ;
+					u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[4] ;
+					u8buffer[u8bufferIdx++] = pstrScanResult->au8BSSID[5] ;					
 				}
-				else if ((s8new_rssi < s8rssi_0) && (s8new_rssi > s8rssi_1))
-				{
-					// new entry will replace entry 1
-					u8buffer[8] = pstrScanResult->s8rssi ;
-					u8buffer[9] = pstrScanResult->au8BSSID[0] ;
-					u8buffer[10] = pstrScanResult->au8BSSID[1] ;
-					u8buffer[11] = pstrScanResult->au8BSSID[2] ;
-					u8buffer[12] = pstrScanResult->au8BSSID[3] ;
-					u8buffer[13] = pstrScanResult->au8BSSID[4] ;
-					u8buffer[14] = pstrScanResult->au8BSSID[5] ;
-					// store the new RSSI for next comparison
-					s8rssi_1 = pstrScanResult->s8rssi ;
-				}
-			}
+			}	
 
 			if(u8ScanResultIdx < u8NumFoundAPs)
 			{
@@ -815,7 +768,8 @@ static void wifi_event_cb(uint8_t u8MsgType, void *pvMsg)
 #ifdef WIFI_POWER_DOWN_ENABLE
 				power_down_wifi() ;
 #endif
-				printf("\n%d AP data loaded in the payload", u8buffer[0]) ;
+				if(u8bufferEntry==1)printf("\n%d best entry loaded in the payload", u8bufferEntry) ;
+				else				printf("\n%d best entries loaded in the payload", u8bufferEntry) ;
 				sendData() ;
 			}
 			break ;
@@ -1135,14 +1089,14 @@ void lTimerCb(void *data)
   ************************************************************************/
 void sendData(void)
 {
-    int status = -1 ;
+	int status = -1 ;
 
-	printf("\nPayload length: %d", u8bufferIdx) ;
+	printf("\nPayload length: %d", u8bufferLen) ;
 	printf("\nPayload: ") ;
-	print_array(u8buffer, u8bufferIdx) ;
+	print_array(u8buffer, u8bufferLen) ;
 
 	lorawanSendReq.buffer = &u8buffer ;
-    lorawanSendReq.bufferLength = u8bufferIdx ;
+    lorawanSendReq.bufferLength = u8bufferLen ;
     lorawanSendReq.confirmed = DEMO_APP_TRANSMISSION_TYPE ;
     lorawanSendReq.port = DEMO_APP_FPORT ;
     status = LORAWAN_Send(&lorawanSendReq) ;

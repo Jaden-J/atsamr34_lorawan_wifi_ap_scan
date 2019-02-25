@@ -99,6 +99,13 @@
 /* This macro defines the application's default sleep duration in milliseconds */
 #define DEMO_CONF_DEFAULT_APP_SLEEP_TIME_MS     1000
 
+/* This macro defines the max. number of entries in the buffer */
+// LoRaWAN best practice: limit the buffer size up to 51 Bytes, so not more than 7 entries
+#define ENTRY_NUMBER	7
+
+/* This macro defines the size of the buffer */
+#define BUFFER_LEN		ENTRY_NUMBER*7
+
 /* This macro defines the WIFI AP SCAN MODE */
 #define PASSIVE_SCAN	1
 #define ACTIVE_SCAN		2

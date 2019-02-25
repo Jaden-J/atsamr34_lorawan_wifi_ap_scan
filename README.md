@@ -343,10 +343,11 @@ The scan results is stored as below data structure for each scan result:
 - The application will perform the following steps:
 </br></br>1. Power-on the WiFi device
 </br></br>2. Scan the WiFi network around
-</br></br>3. Select the 2 best WiFi network according to the RSSI level and fill the payload accordingly
-</br></br>4. Transmit the payload in LoRaWAN
+</br></br>3. Power-down the WiFi device
+</br></br>4. Select the best WiFi networks according to the RSSI level and fill the payload accordingly
+</br></br>5. Transmit the payload in LoRaWAN
 </br></br>![](Doc/AppsEndDevice_ScanSend.png) </br></br>
 - You can observe your board's uplink payload data by connecting to the dashboard of your Network Server.
-- The payload format is starting by the number of AP in the frame then following by RSSI value and BSSID
+- The payload format is starting by the RSSI value (unsigned format) then following by BSSID for the APs recorded.
 </br></br>![](Doc/Console_Payload.png) </br></br>
 - The backend server will be able to get a position from these information.
